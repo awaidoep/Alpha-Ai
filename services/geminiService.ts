@@ -10,7 +10,7 @@ export const getAIResponse = async (
 ) => {
   try {
     // Create new instance right before call as required
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
     
     // Project structure overview
     const projectMap = Object.values(fullFsContext)
