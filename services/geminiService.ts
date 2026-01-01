@@ -1,16 +1,15 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { ChatMessage, FileSystem, FileNode } from '../types';
 
 export const getAIResponse = async (
+  apiKey: string,
   modelName: string,
   history: ChatMessage[],
   fullFsContext: FileSystem,
   taggedFiles: FileNode[]
 ) => {
   try {
-    // Create new instance right before call as required
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
+    const ai = new GoogleGenAI({ apiKey });
     
     // Project structure overview
     const projectMap = Object.values(fullFsContext)
@@ -94,9 +93,8 @@ RULES:
     }
   } catch (error: any) {
     console.error("Architect Engine Error:", error);
-    if (error?.message?.includes("Requested entity was not found")) {
-        // This usually means the API key is invalid or from an unpaid project
-        throw new Error("KEY_NOT_FOUND");
+    if (error?.message?.includes("Requested entity was not found") || error?.status === 403 || error?.status === 400) {
+        throw new Error("KEY_ERROR");
     }
     throw error;
   }

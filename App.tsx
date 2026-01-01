@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Settings, ChevronRight, ChevronDown, Plus, X, Send, 
@@ -28,7 +29,7 @@ const App: React.FC = () => {
   const [userInput, setUserInput] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
   
-  // History State for FileSystem
+  // History State
   const [fsHistory, setFsHistory] = useState<FileSystem[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const isInternalHistoryUpdate = useRef(false);
@@ -41,14 +42,13 @@ const App: React.FC = () => {
   const [atMenuSearch, setAtMenuSearch] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>({ 
     theme: 'dark', 
-    model: 'gemini-3-pro-preview'
+    model: 'gemini-3-pro-preview',
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
 
-  // Initialize App
   useEffect(() => {
     const init = async () => {
       try {
@@ -58,7 +58,15 @@ const App: React.FC = () => {
         setHistoryIndex(0);
 
         const savedSettings = localStorage.getItem('windsurf_settings_v1');
-        if (savedSettings) setSettings(JSON.parse(savedSettings));
+        if (savedSettings) {
+           const parsed = JSON.parse(savedSettings);
+           // Ensure migration for new fields
+           setSettings(prev => ({
+             ...prev,
+             theme: parsed.theme || prev.theme,
+             model: parsed.model || prev.model
+           }));
+        }
         
         const nodes = Object.values(savedFs) as FileNode[];
         const firstFile = nodes.find(f => f.type === 'file');
@@ -73,7 +81,6 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  // Auto-save logic
   useEffect(() => { 
     if (Object.keys(fs).length > 0) {
       setIsSaving(true);
@@ -170,20 +177,6 @@ const App: React.FC = () => {
     setActiveView('preview');
   };
 
-  const handleSelectKey = async () => {
-    try {
-      if ((window as any).aistudio?.openSelectKey) {
-        await (window as any).aistudio.openSelectKey();
-        // Proceed as if key selection was successful to avoid race conditions
-        setShowSettings(false);
-      } else {
-        alert("API Key selection is not available in this environment.");
-      }
-    } catch (err) {
-      console.error("Failed to open key selector:", err);
-    }
-  };
-
   const handleApplyArchitectPlan = (ops: FileOperation[]) => {
     setFs(prev => {
       const nextFs = { ...prev };
@@ -193,16 +186,18 @@ const App: React.FC = () => {
           nextFs[targetId] = { ...nextFs[targetId] as FileNode, content: op.content };
         } else {
           const newId = Math.random().toString(36).substr(2, 9);
-          nextFs[newId] = { id: newId, name: op.path, type: 'file', content: op.content, parentId: 'root' };
+          const newNode: FileNode = { id: newId, name: op.path, type: 'file', content: op.content, parentId: 'root' };
+          nextFs[newId] = newNode;
           if (nextFs['root']) {
+            const root = nextFs['root'] as FileNode;
             nextFs['root'] = { 
-              ...(nextFs['root'] as FileNode), 
-              children: [...((nextFs['root'] as FileNode).children || []), newId] 
+              ...root, 
+              children: [...(root.children || []), newId] 
             };
           }
           targetId = newId;
         }
-        if (!openTabs.includes(targetId)) setOpenTabs(tabs => [...tabs, targetId!]);
+        if (targetId && !openTabs.includes(targetId)) setOpenTabs(tabs => [...tabs, targetId!]);
       });
       recordFsChange(nextFs);
       return nextFs;
@@ -216,10 +211,12 @@ const App: React.FC = () => {
     if (!name) return;
     const id = Math.random().toString(36).substr(2, 9);
     setFs(prev => {
-      const next = {
+      const newFile: FileNode = { id, name, type: 'file', content: '', parentId: 'root' };
+      const root = prev['root'] as FileNode;
+      const next: FileSystem = {
         ...prev,
-        [id]: { id, name, type: 'file', content: '', parentId: 'root' },
-        ['root']: { ...(prev['root'] as FileNode), children: [...((prev['root'] as FileNode).children || []), id] }
+        [id]: newFile,
+        ['root']: { ...root, children: [...(root.children || []), id] }
       };
       recordFsChange(next);
       return next;
@@ -234,10 +231,12 @@ const App: React.FC = () => {
     if (!name) return;
     const id = Math.random().toString(36).substr(2, 9);
     setFs(prev => {
-      const next = {
+      const newFolder: FileNode = { id, name, type: 'folder', parentId: 'root', children: [], isOpen: true };
+      const root = prev['root'] as FileNode;
+      const next: FileSystem = {
         ...prev,
-        [id]: { id, name, type: 'folder', parentId: 'root', children: [], isOpen: true },
-        ['root']: { ...(prev['root'] as FileNode), children: [...((prev['root'] as FileNode).children || []), id] }
+        [id]: newFolder,
+        ['root']: { ...root, children: [...(root.children || []), id] }
       };
       recordFsChange(next);
       return next;
@@ -263,14 +262,11 @@ const App: React.FC = () => {
     const promptValue = (customPrompt || userInput).replace(/@\S+/g, '').trim();
     if (!promptValue && !customPrompt) return;
     
-    // Check if key is available
-    if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
-      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-      if (!hasKey && !process.env.API_KEY) {
-        alert("Architect Key missing. Please select a key in Settings.");
-        setShowSettings(true);
-        return;
-      }
+    // Check for API KEY in env
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      alert("API_KEY not found in environment. Please configure process.env.API_KEY.");
+      return;
     }
 
     const taggedFiles = selectedContextIds.map(id => fs[id]).filter(Boolean) as FileNode[];
@@ -289,7 +285,7 @@ const App: React.FC = () => {
     setIsAiLoading(true);
 
     try {
-      const response = await getAIResponse(settings.model, [...chatHistory, userMsg], fs, taggedFiles);
+      const response = await getAIResponse(apiKey, settings.model, [...chatHistory, userMsg], fs, taggedFiles);
       setChatHistory(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -299,12 +295,12 @@ const App: React.FC = () => {
       }]);
       if (activeView !== 'chat') setActiveView('chat');
     } catch (err: any) {
-      if (err?.message === "KEY_NOT_FOUND") {
-        alert("The selected API key was not found. Please re-select.");
-        setShowSettings(true);
+      if (err?.message === "KEY_ERROR") {
+        alert("The API Key is invalid or expired.");
       } else {
-        alert("Architect Engine connection failed.");
+        alert("Architect Engine connection failed. Please check your network or API quota.");
       }
+      console.error(err);
     } finally { setIsAiLoading(false); }
   };
 
@@ -337,9 +333,11 @@ const App: React.FC = () => {
         const id = Math.random().toString(36).substr(2, 9);
         setFs(prev => {
           const next = { ...prev };
-          next[id] = { id, name: file.name, type: 'file', content, parentId: 'root' };
+          const newNode: FileNode = { id, name: file.name, type: 'file', content, parentId: 'root' };
+          next[id] = newNode;
           if (next['root']) {
-            next['root'] = { ...(next['root'] as FileNode), children: [...((next['root'] as FileNode).children || []), id] };
+            const root = next['root'] as FileNode;
+            next['root'] = { ...root, children: [...(root.children || []), id] };
           }
           recordFsChange(next);
           return next;
@@ -446,7 +444,7 @@ const App: React.FC = () => {
             <button onClick={handleUndo} disabled={activeView === 'explorer' ? historyIndex <= 0 : false} className={`p-1.5 transition-all ${ (activeView === 'explorer' && historyIndex <= 0) ? 'text-slate-700' : 'text-slate-400 hover:text-teal-400 active:scale-75' }`}><Undo2 size={18} /></button>
             <button onClick={handleRedo} disabled={activeView === 'explorer' ? historyIndex >= fsHistory.length - 1 : false} className={`p-1.5 transition-all ${ (activeView === 'explorer' && historyIndex >= fsHistory.length - 1) ? 'text-slate-700' : 'text-slate-400 hover:text-teal-400 active:scale-75' }`}><Redo2 size={18} /></button>
           </div>
-          <button onClick={() => setShowSettings(true)} className={`p-2 transition-colors ${!process.env.API_KEY ? 'text-teal-400 animate-pulse' : 'text-slate-500 hover:text-white'}`}><Settings size={20} /></button>
+          <button onClick={() => setShowSettings(true)} className={`p-2 transition-colors text-slate-500 hover:text-white`}><Settings size={20} /></button>
         </div>
       </header>
 
@@ -611,35 +609,6 @@ const App: React.FC = () => {
                         <span className="text-[10px] font-black uppercase tracking-widest">{m.name}</span>
                       </div>
                     ))}
-                  </div>
-               </div>
-               <div className="space-y-4">
-                  <div className="flex justify-between items-center px-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Authentication</label>
-                  </div>
-                  <div className="space-y-3">
-                    <button 
-                      onClick={handleSelectKey}
-                      className="w-full flex items-center justify-between p-5 rounded-3xl border-2 border-teal-500/50 bg-teal-500/10 text-teal-400 hover:bg-teal-500/20 transition-all active:scale-95"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <Key size={18} />
-                        <span className="text-xs font-black uppercase tracking-widest">Select API Key</span>
-                      </div>
-                      <ChevronRight size={18} />
-                    </button>
-                    <p className="text-[10px] text-slate-500 font-medium px-4 leading-relaxed">
-                      To enable high-performance AI features, select a key from a paid project.
-                    </p>
-                    <a 
-                      href="https://ai.google.dev/gemini-api/docs/billing" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center space-x-1 text-[10px] text-teal-400 hover:underline px-4"
-                    >
-                      <span>Billing Documentation</span>
-                      <ExternalLink size={10} />
-                    </a>
                   </div>
                </div>
             </div>
