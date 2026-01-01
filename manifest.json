@@ -1,0 +1,19 @@
+
+{
+  "name": "WindSurf AI Editor",
+  "short_name": "WindSurf",
+  "description": "Modern AI-integrated Code Editor with Deep Learning Capabilities",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2586/2586488.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

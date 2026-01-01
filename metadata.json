@@ -1,0 +1,8 @@
+{
+  "name": "WindSurf AI Editor",
+  "description": "Browser-based AI-powered code editor with deep Gemini integration.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
